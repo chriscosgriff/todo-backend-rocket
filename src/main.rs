@@ -20,17 +20,17 @@ struct Todo {
     title: String,
 }
 
-struct CORS<R>(R);
+struct CORS<R>(Option<R>);
 
 impl<'r, R: Responder<'r>> Responder<'r> for CORS<R> {
     default fn respond(self) -> Result<Response<'r>, Status> {
         let mut build = Response::build();
         build.merge(self.0.respond()?);
 
-        build.raw_header("Access-Control-Allow-Origin", "*")
-            .raw_header("Access-Control-Allow-Methods",
-                        "GET, PUT, PATCH, POST, OPTIONS")
-            .raw_header("Access-Control-Allow-Headers", "Content-Type")
+        build.raw_header("access-control-allow-origin", "*")
+            .raw_header("access-control-Allow-Methods",
+                        "HEAD, GET, PUT, PATCH, POST, OPTIONS")
+            .raw_header("access-control-allow-headers", "Content-Type")
             .ok()
     }
 }
@@ -48,13 +48,18 @@ fn get_config() -> Result<Config, ConfigError> {
 
 fn start_server() -> Result<(), ConfigError> {
     Ok(rocket::custom(get_config()?, true)
-        .mount("/", routes![index])
+        .mount("/", routes![index, index_options])
         .launch())
 }
 
 #[get("/")]
 fn index() -> CORS<JSON<Todo>> {
-    CORS(JSON(Todo { title: "Rocket!".to_string() }))
+    CORS(Some(JSON(Todo { title: "Rocket!".to_string() })))
+}
+
+#[route(OPTIONS, "/")]
+fn index_options() -> CORS<()> {
+    CORS(None)
 }
 
 fn main() {
