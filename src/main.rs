@@ -25,7 +25,9 @@ struct CORS<R>(Option<R>);
 impl<'r, R: Responder<'r>> Responder<'r> for CORS<R> {
     default fn respond(self) -> Result<Response<'r>, Status> {
         let mut build = Response::build();
-        build.merge(self.0.respond()?);
+        if let Some(responder) = self.0 {
+            build.merge(responder.respond()?);
+        }
 
         build.raw_header("access-control-allow-origin", "*")
             .raw_header("access-control-Allow-Methods",
@@ -57,7 +59,7 @@ fn index() -> CORS<JSON<Todo>> {
     CORS(Some(JSON(Todo { title: "Rocket!".to_string() })))
 }
 
-#[route(OPTIONS, "/")]
+#[options("/")]
 fn index_options() -> CORS<()> {
     CORS(None)
 }
