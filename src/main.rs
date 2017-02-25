@@ -15,7 +15,7 @@ use std::env;
 use rocket::response::{Responder, Response};
 use rocket::http::Status;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Todo {
     title: String,
 }
@@ -50,17 +50,22 @@ fn get_config() -> Result<Config, ConfigError> {
 
 fn start_server() -> Result<(), ConfigError> {
     Ok(rocket::custom(get_config()?, true)
-        .mount("/", routes![index, index_options])
+        .mount("/", routes![pre_flight_check, get_todo, post_todo])
         .launch())
 }
 
 #[get("/")]
-fn index() -> CORS<JSON<Todo>> {
+fn get_todo() -> CORS<JSON<Todo>> {
     CORS(Some(JSON(Todo { title: "Rocket!".to_string() })))
 }
 
+#[post("/", format = "application/json", data = "<todo>")]
+fn post_todo(todo: JSON<Todo>) -> CORS<JSON<Todo>> {
+    CORS(Some(JSON(todo.into_inner())))
+}
+
 #[options("/")]
-fn index_options() -> CORS<()> {
+fn pre_flight_check() -> CORS<()> {
     CORS(None)
 }
 
