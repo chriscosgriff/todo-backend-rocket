@@ -18,13 +18,26 @@ use rocket::http::Status;
 use rocket::State;
 use std::env;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::hash_map::Entry;
 
-struct CurrentId(AtomicUsize);
+struct IdGenerator(AtomicUsize);
 
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+impl IdGenerator {
+    pub fn next_id(&self) -> usize {
+        self.0.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+#[derive(Deserialize)]
+struct NewTodo {
+    title: Option<String>,
+    completed: Option<bool>,
+    order: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Todo {
     title: Option<String>,
     completed: Option<bool>,
@@ -42,6 +55,18 @@ impl Todo {
         }
         if let Some(order) = other.order {
             self.order = Some(order);
+        }
+    }
+
+    pub fn from(id: usize, new_todo: NewTodo) -> Todo {
+        Todo {
+            title: new_todo.title.or(None),
+            completed: new_todo.completed.or(Some(false)),
+            // url: Some(format!("http://localhost:{}/todos/{}", get_server_port(), id)),
+            url: Some(format!("https://todo-backend-rocket.herokuapp.com:{}/todos/{}",
+                              get_server_port(),
+                              id)),
+            order: new_todo.order.or(None),
         }
     }
 }
@@ -64,7 +89,7 @@ impl<'r, R: Responder<'r>> Responder<'r> for CORS<R> {
 }
 
 lazy_static! {
-  static ref DB: Mutex<HashMap<usize, Todo>> = Mutex::new(HashMap::new());
+  static ref DB: RwLock<HashMap<usize, Todo>> = RwLock::new(HashMap::new());
 }
 
 fn main() {
@@ -83,37 +108,29 @@ fn get_config() -> Result<Config, ConfigError> {
 }
 
 fn start_server() -> Result<(), ConfigError> {
-    Ok(rocket::custom(get_config()?, true)
-        .mount("/",
+    let server = rocket::custom(get_config()?, true)
+        .mount("/todos",
                routes![cors, cors_id, list, delete_all, create, read, update, delete])
-        .manage(CurrentId(AtomicUsize::new(1)))
-        .launch())
+        .manage(IdGenerator(AtomicUsize::new(1)))
+        .launch();
+    Ok(server)
 }
 
-fn to_new_todo(id: usize, new_todo: Todo) -> Todo {
-    Todo {
-        title: new_todo.title.or(None),
-        completed: new_todo.completed.or(Some(false)),
-        url: Some(format!("http://localhost:8000/{}", id)),
-        order: new_todo.order.or(None),
-    }
+#[post("/", format = "application/json", data = "<new_todo>")]
+fn create(new_todo: JSON<NewTodo>, id_generator: State<IdGenerator>) -> CORS<JSON<Todo>> {
+    let id = id_generator.next_id();
+    let todo = Todo::from(id, new_todo.0);
+    let mut db = DB.write().unwrap();
+    db.insert(id, todo.clone());
+    CORS(Some(JSON(todo)))
 }
 
-#[post("/", format = "application/json", data = "<todo>")]
-fn create(todo: JSON<Todo>, current_id: State<CurrentId>) -> CORS<JSON<Todo>> {
-    let id = current_id.0.fetch_add(1, Ordering::Relaxed);
-    let mut db = DB.lock().unwrap();
-    let td = db.entry(id).or_insert(to_new_todo(id, todo.into_inner()));
-    println!("{:?}", td);
-    CORS(Some(JSON(td.clone())))
-}
-
-#[patch("/<id>", format = "application/json", data = "<todo_patched>")]
-fn update(id: usize, todo_patched: JSON<Todo>) -> CORS<JSON<Todo>> {
-    let mut db = DB.lock().unwrap();
+#[patch("/<id>", format = "application/json", data = "<updated_todo>")]
+fn update(id: usize, updated_todo: JSON<Todo>) -> CORS<JSON<Todo>> {
+    let mut db = DB.write().unwrap();
     if let Entry::Occupied(mut o) = db.entry(id) {
         let mut todo = o.get_mut();
-        todo.merge(todo_patched.into_inner());
+        todo.merge(updated_todo.0);
         CORS(Some(JSON(todo.clone())))
     } else {
         CORS(None)
@@ -122,32 +139,28 @@ fn update(id: usize, todo_patched: JSON<Todo>) -> CORS<JSON<Todo>> {
 
 #[get("/<id>")]
 fn read(id: usize) -> CORS<JSON<Todo>> {
-    let db = DB.lock().unwrap();
-    // handle not found...
+    let db = DB.read().unwrap();
     let todo = db.get(&id).unwrap();
     CORS(Some(JSON(todo.clone())))
 }
 
 #[get("/")]
 fn list() -> CORS<JSON<Vec<Todo>>> {
-    let db = DB.lock()
-        .unwrap();
-    let todos = db.values()
-        .cloned()
-        .collect();
+    let db = DB.read().unwrap();
+    let todos = db.values().cloned().collect();
     CORS(Some(JSON(todos)))
 }
 
 #[delete("/" )]
 fn delete_all() -> CORS<()> {
-    let mut db = DB.lock().unwrap();
+    let mut db = DB.write().unwrap();
     db.clear();
     CORS(None)
 }
 
 #[delete("/<id>" )]
 fn delete(id: usize) -> CORS<()> {
-    let mut db = DB.lock().unwrap();
+    let mut db = DB.write().unwrap();
     db.remove(&id);
     CORS(None)
 }
