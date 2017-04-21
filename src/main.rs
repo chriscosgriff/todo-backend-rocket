@@ -11,10 +11,11 @@ extern crate serde_derive;
 #[macro_use]
 extern crate lazy_static;
 
+mod cors;
+
+use cors::CORS;
 use rocket_contrib::JSON;
 use rocket::config::{Config, ConfigError, Environment};
-use rocket::response::{Responder, Response};
-use rocket::http::Status;
 use rocket::State;
 use std::env;
 use std::collections::HashMap;
@@ -66,23 +67,6 @@ impl Todo {
             url: Some(format!("https://todo-backend-rocket.herokuapp.com/todos/{}", id)),
             order: new_todo.order.or(None),
         }
-    }
-}
-
-struct CORS<R>(Option<R>);
-
-impl<'r, R: Responder<'r>> Responder<'r> for CORS<R> {
-    default fn respond(self) -> Result<Response<'r>, Status> {
-        let mut build = Response::build();
-        if let Some(inner_res) = self.0 {
-            build.merge(inner_res.respond()?);
-        }
-
-        build.raw_header("access-control-allow-origin", "*")
-            .raw_header("access-control-Allow-Methods",
-                        "OPTIONS, GET, POST, PATCH, DELETE")
-            .raw_header("access-control-allow-headers", "Content-Type")
-            .ok()
     }
 }
 
@@ -169,6 +153,6 @@ fn cors() -> CORS<()> {
 }
 
 #[options("/<id>")]
-fn cors_id(id: usize) -> CORS<()> {
+fn cors_id(id: Option<usize>) -> CORS<()> {
     CORS(None)
 }
