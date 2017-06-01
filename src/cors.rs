@@ -10,7 +10,8 @@ impl<'r, R: Responder<'r>> Responder<'r> for CORS<R> {
             build.merge(inner_res.respond()?);
         }
 
-        build.raw_header("access-control-allow-origin", "*")
+        build
+            .raw_header("access-control-allow-origin", "*")
             .raw_header("access-control-Allow-Methods",
                         "OPTIONS, GET, POST, PATCH, DELETE")
             .raw_header("access-control-allow-headers", "Content-Type")

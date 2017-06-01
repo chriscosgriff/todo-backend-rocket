@@ -63,9 +63,9 @@ impl Todo {
         Todo {
             title: new_todo.title.or(None),
             completed: new_todo.completed.or(Some(false)),
-            // url: Some(format!("http://localhost:{}/todos/{}", get_server_port(), id)),
-            url: Some(format!("https://todo-backend-rocket.herokuapp.com/todos/{}", id)),
-            order: new_todo.order.or(None),
+            url: Some(format!("http://localhost:{}/todos/{}", get_server_port(), id)),
+            // url: Some(format!("https://todo-backend-rocket.herokuapp.com/todos/{}", id)),
+            order: new_todo.order.or(None)
         }
     }
 }
